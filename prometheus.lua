@@ -115,6 +115,29 @@ function Gauge:set(value, label_values)
   self.prometheus:set(self.name, self.label_names, label_values, value)
 end
 
+-- Increase a given gauge by `value`
+--
+-- Args:
+--   value: (number) a value to add to the counter. Defaults to 1 if skipped.
+--   label_values: an array of label values. Can be nil (i.e. not defined) for
+--     metrics that have no labels.
+function Gauge:inc(value, label_values)
+  local err = self:check_label_values(label_values)
+  if err ~= nil then
+    self.prometheus:log_error(err)
+    return
+  end
+  self.prometheus:inc(self.name, self.label_names, label_values, value or 1)
+end
+
+-- Scale all the instances of the given gauge by `factor`
+--
+-- Args:
+--   factor: (number) a factor to scale all the instances values
+function Gauge:scale(factor)
+  self.prometheus:scaleMetricsByPrefix(self.name, factor)
+end
+
 local Histogram = Metric:new()
 -- Record a given value in a histogram.
 --
@@ -288,6 +311,9 @@ function Prometheus.init(dict_name, prefix)
   self:counter("nginx_metric_errors_total",
     "Number of nginx-lua-prometheus errors")
   self.dict:set("nginx_metric_errors_total", 0)
+  self:gauge("nginx_last_reset_timestamp",
+    "Timestamp of last stats reset")
+  self.dict:set("nginx_last_reset_timestamp", ngx.now())
   return self
 end
 
@@ -491,6 +517,41 @@ function Prometheus:histogram_observe(name, label_names, label_values, value)
       self:inc(name .. "_bucket", l_names, l_values, 1)
     end
   end
+end
+
+local function starts_with(str, start)
+  return str:sub(1, #start) == start
+ end
+
+function Prometheus:scaleMetricsByPrefix(prefix, factor)
+  if not self.initialized then
+    return
+  end
+  local keys = self.dict:get_keys(0)
+  for _, key in ipairs(keys) do
+    if starts_with(key, prefix) then
+      self.dict:set(key, self.dict:get(key) * factor)
+    end
+  end
+end
+
+-- Reset all metrics (gauge, histogram, counter)
+function Prometheus:reset()
+  if not self.initialized then
+    return
+  end
+  local keys = self.dict:get_keys(0)
+  for _, key in ipairs(keys) do
+    self.dict:set(key, 0)
+  end
+  self.dict:set("nginx_last_reset_timestamp", ngx.now())
+end
+
+function Prometheus:lastReset()
+  if not self.initialized then
+    return nil
+  end
+  return self.dict:get("nginx_last_reset_timestamp")
 end
 
 -- Present all metrics in a text format compatible with Prometheus.
