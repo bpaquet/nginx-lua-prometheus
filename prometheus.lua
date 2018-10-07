@@ -519,17 +519,13 @@ function Prometheus:histogram_observe(name, label_names, label_values, value)
   end
 end
 
-local function starts_with(str, start)
-  return str:sub(1, #start) == start
- end
-
 function Prometheus:scaleMetricsByPrefix(prefix, factor)
   if not self.initialized then
     return
   end
   local keys = self.dict:get_keys(0)
   for _, key in ipairs(keys) do
-    if starts_with(key, prefix) then
+    if key:find(prefix, 1, true) then
       self.dict:set(key, self.dict:get(key) * factor)
     end
   end
