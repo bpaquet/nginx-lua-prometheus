@@ -158,8 +158,8 @@ function Histogram:observe(value, label_values)
   self.prometheus:histogram_observe(self.name, self.label_names, label_values, value)
 end
 
-function Histogram:export(export_metric)
-  self.prometheus:histogram_export_percentiles(self.name, self.label_names, {50, 90, 95, 99}, export_metric.name)
+function Histogram:export(export_metric, percentiles)
+  self.prometheus:histogram_export_percentiles(self.name, self.label_names, percentiles, export_metric.name)
 end
 
 local Prometheus = {}
@@ -530,7 +530,10 @@ function Prometheus:scaleMetricsByPrefix(prefix, factor)
   local keys = self.dict:get_keys(0)
   for _, key in ipairs(keys) do
     if key:find(prefix, 1, true) then
-      self.dict:set(key, self.dict:get(key) * factor)
+      local value, error = self.dict:get(key)
+      if value then
+        self:set_key(key, value * factor)
+      end
     end
   end
 end
@@ -544,7 +547,7 @@ function Prometheus:reset()
   for _, key in ipairs(keys) do
     local short_name = short_metric_name(key)
     if self.type[short_name] ~= "counter" then
-      self.dict:set(key, 0)
+      self:set_key(key, 0)
     end
   end
   self.dict:set("nginx_last_reset_timestamp", ngx.now())
@@ -649,22 +652,29 @@ function Prometheus:histogram_export_percentiles(name, label_names, percentiles,
         local prefix = short_name:sub(1, short_name:len() - 6)
         local suffix = key:sub(short_name:len() + 1, key:len() - 1)
         if self.type[prefix] == "histogram" then
-          local count = self.dict:get(key)
-          local sum = self.dict:get(prefix .. '_sum' .. suffix .. '}')
-          local current_bucket = 0
-          local values = {}
-          for _, v in pairs(DEFAULT_BUCKETS) do
-            local key_for_value = prefix .. '_bucket' .. suffix .. ',le="' .. self.bucket_format[prefix]:format(v) .. '"}'
-            local value = self.dict:get(key)
-            table.insert(values, value)
-          end
-          local final_key = prefix .. '_bucket' .. suffix .. ',le="Inf"}'
-          local final_value = self.dict:get(final_key)
-          table.insert(values, final_value)
-          local result = ExtractPercentiles(values, DEFAULT_BUCKETS, percentiles)
-          for index, p in pairs(percentiles) do
-            local key = export_prefix .. suffix .. ',percentile="' .. p .. '"}'
-            self.dict:set(key, result[index])
+          local count, err = self.dict:get(key)
+          if count then
+            local current_bucket = 0
+            local values = {}
+            for _, v in pairs(self.buckets[prefix]) do
+              local key_for_value = prefix .. '_bucket' .. suffix .. ',le="' .. self.bucket_format[prefix]:format(v) .. '"}'
+              local value, err = self.dict:get(key_for_value)
+              if value == nil then
+                value = 0
+              end
+              table.insert(values, value)
+            end
+            local final_key = prefix .. '_bucket' .. suffix .. ',le="Inf"}'
+            local final_value = self.dict:get(final_key)
+            if final_value == nil then
+              final_value = 0
+            end
+            table.insert(values, final_value)
+            local result = ExtractPercentiles(values, self.buckets[prefix], percentiles)
+            for index, p in pairs(percentiles) do
+              local key = export_prefix .. suffix .. ',percentile="' .. p .. '"}'
+              self:set_key(key, result[index])
+            end
           end
         end
       end

@@ -423,10 +423,10 @@ function TestExtractPercentiles()
 end
 
 function TestExtractPercentilesNoData()
-    bounds = {0.5, 1, 2}
-    percentiles = {50, 90}
-    histo1 = BuildHistogram({}, bounds)
-    luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {0, 0})
+  bounds = {0.5, 1, 2}
+  percentiles = {50, 90}
+  histo1 = BuildHistogram({}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {0, 0})
 end
 
 function TestExtractPercentilesZero()
@@ -455,6 +455,62 @@ function TestExtractPercentilesAllAbove()
   percentiles = {50, 90}
   histo1 = BuildHistogram({2.5}, bounds)
   luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {2, 2})
+end
+
+function TestPrometheus:testHistogramExportPercentilesSimple()
+  local export = self.p:gauge("export", "", {"host", "percentile"})
+  local foo = self.p:histogram("foo", "", {"host"})
+  foo:observe(0.15, {"a"})
+  foo:export(export, {50, 90, 95, 99})
+
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="50"}'), 0.1)
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="90"}'), 0.1)
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="95"}'), 0.1)
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="99"}'), 0.1)
+
+  foo:observe(100, {"a"})
+  foo:export(export, {50, 90, 95, 99})
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="50"}'), 10)
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="90"}'), 10)
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="95"}'), 10)
+  luaunit.assertEquals(self.dict:get('export{host="a",percentile="99"}'), 10)
+end
+
+function round(num, numDecimalPlaces)
+  local mult = 10^numDecimalPlaces
+  return math.floor(num * mult + 0.5) / mult
+end
+
+function TestPrometheus:testHistogramExportPercentiles()
+  local export = self.p:gauge("export", "", {"host", "percentile"})
+  local foo = self.p:histogram("foo", "", {"host"})
+  self.p:set_key('foo_bucket{host="a",le="00.020"}', 0)
+  self.p:set_key('foo_bucket{host="a",le="00.030"}', 19)
+  self.p:set_key('foo_bucket{host="a",le="00.050"}', 260)
+  self.p:set_key('foo_bucket{host="a",le="00.075"}', 436)
+  self.p:set_key('foo_bucket{host="a",le="00.100"}', 518)
+  self.p:set_key('foo_bucket{host="a",le="00.200"}', 662)
+  self.p:set_key('foo_bucket{host="a",le="00.300"}', 725)
+  self.p:set_key('foo_bucket{host="a",le="00.400"}', 755)
+  self.p:set_key('foo_bucket{host="a",le="00.500"}', 786)
+  self.p:set_key('foo_bucket{host="a",le="00.750"}', 852)
+  self.p:set_key('foo_bucket{host="a",le="01.000"}', 882)
+  self.p:set_key('foo_bucket{host="a",le="01.500"}', 917)
+  self.p:set_key('foo_bucket{host="a",le="02.000"}', 928)
+  self.p:set_key('foo_bucket{host="a",le="03.000"}', 1075)
+  self.p:set_key('foo_bucket{host="a",le="03.000"}', 1237)
+  self.p:set_key('foo_bucket{host="a",le="05.000"}', 1237)
+  self.p:set_key('foo_bucket{host="a",le="10.000"}', 1324)
+  self.p:set_key('foo_bucket{host="a",le="Inf"}', 1363)
+  self.p:set_key('foo_count{host="a"}', 1363)
+  
+  foo:export(export, {50, 90, 95, 99})
+
+
+  luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="50"}'), 2), 0.23)
+  luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="90"}'), 2), 2.96)
+  luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="95"}'), 2), 8.28)
+  luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="99"}'), 2), 10)
 end
 
 os.exit(luaunit.run())
