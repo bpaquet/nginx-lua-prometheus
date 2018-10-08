@@ -48,6 +48,10 @@ function Nginx.print(printed)
   end
 end
 
+function Nginx.now()
+  return 0
+end
+
 -- Finds index of a given object in a table
 local function find_idx(table, element)
   for idx, value in pairs(table) do
@@ -336,5 +340,48 @@ function TestPrometheus:testCollectWithPrefix()
   assert(find_idx(ngx.printed, 'test_pref_b1_bucket{var="ok",le="0100.0"} 2') ~= nil)
   assert(find_idx(ngx.printed, 'test_pref_b1_sum{var="ok"} 5250') ~= nil)
 end
+
+function TestPrometheus:testGaugeSpecificFunction()
+  self.gauge2:inc(1, {"v2", "\""})
+  self.gauge2:inc(3, {"v2", "\""})
+  self.gauge2:inc(5, {"v3", "\""})
+  luaunit.assertEquals(self.dict:get('gauge2{f2="v2",f1="\\""}'), 4)
+  luaunit.assertEquals(self.dict:get('gauge2{f2="v3",f1="\\""}'), 5)
+  self.gauge2:scale(0.5)
+  luaunit.assertEquals(self.dict:get('gauge2{f2="v2",f1="\\""}'), 2)
+  luaunit.assertEquals(self.dict:get('gauge2{f2="v3",f1="\\""}'), 2.5)
+  luaunit.assertEquals(ngx.logs, nil)
+end
+
+function TestPrometheus:testReset()
+  local hist3 = self.p:histogram("l3", "Histogram 3", {"var"}, {1,2,3})
+
+  self.counter1:inc(5)
+  self.gauge2:set(2, {"v2", "v1"})
+  hist3:observe(2, {"ok"})
+  hist3:observe(0.151, {"ok"})
+  luaunit.assertEquals(self.dict:get('metric1'), 5)
+  luaunit.assertEquals(self.dict:get('gauge2{f2="v2",f1="v1"}'), 2)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="1.0"}'), 1)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="2.0"}'), 2)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="3.0"}'), 2)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="Inf"}'), 2)
+  luaunit.assertEquals(self.dict:get('l3_sum{var="ok"}'), 2.151)
+  luaunit.assertEquals(self.dict:get('l3_count{var="ok"}'), 2)
+
+  self.p:reset()
+
+  luaunit.assertEquals(self.dict:get('metric1'), 5)
+  luaunit.assertEquals(self.dict:get('gauge2{f2="v2",f1="v1"}'), 0)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="1.0"}'), 0)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="2.0"}'), 0)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="3.0"}'), 0)
+  luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="Inf"}'), 0)
+  luaunit.assertEquals(self.dict:get('l3_sum{var="ok"}'), 0)
+  luaunit.assertEquals(self.dict:get('l3_count{var="ok"}'), 0)
+
+  luaunit.assertEquals(ngx.logs, nil)
+end
+
 
 os.exit(luaunit.run())

@@ -538,7 +538,10 @@ function Prometheus:reset()
   end
   local keys = self.dict:get_keys(0)
   for _, key in ipairs(keys) do
-    self.dict:set(key, 0)
+    local short_name = short_metric_name(key)
+    if self.type[short_name] ~= "counter" then
+      self.dict:set(key, 0)
+    end
   end
   self.dict:set("nginx_last_reset_timestamp", ngx.now())
 end
