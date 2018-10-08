@@ -383,5 +383,78 @@ function TestPrometheus:testReset()
   luaunit.assertEquals(ngx.logs, nil)
 end
 
+function BuildHistogram(values, bucketsBoundaries)
+  local result = {}
+  for _, _ in pairs(bucketsBoundaries) do
+    table.insert(result, 0)
+  end
+  table.insert(result, 0)
+  local size = table.getn(bucketsBoundaries)
+  for _, value in pairs(values) do
+    for index, boundary in pairs(bucketsBoundaries) do
+      if value < boundary then
+        result[index] = result[index] + 1
+      end
+    end
+    result[size + 1] = result[size + 1] + 1
+  end
+  return result
+end
+
+function TestBuildHistogram()
+  bounds = {0.5, 1, 2}
+  luaunit.assertEquals(BuildHistogram({0.7}, bounds), {0, 1, 1, 1})
+  luaunit.assertEquals(BuildHistogram({0.7, 0.7}, bounds), {0, 2, 2, 2})
+  luaunit.assertEquals(BuildHistogram({0.1, 0.7}, bounds), {1, 2, 2, 2})
+  luaunit.assertEquals(BuildHistogram({3}, bounds), {0, 0, 0, 1})
+end
+
+function TestExtractPercentiles()
+  bounds = {0.5, 1, 2}
+  percentiles = {50, 90}
+  histo1 = BuildHistogram({0.7, 0.8, 0.9, 0.95, 1.2, 1.3}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {0.875, 1.5})
+  histo2 = BuildHistogram({0.8, 0.8, 0.8, 0.8}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo2, bounds, percentiles), {0.75, 0.875})
+  histo3 = BuildHistogram({0.1, 0.2, 0.3, 0.3}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo3, bounds, percentiles), {0.25, 0.375})
+  histo4 = BuildHistogram({0.1, 0.2, 0.3, 0.2, 4}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo4, bounds, percentiles), {0.25, 2})
+end
+
+function TestExtractPercentilesNoData()
+    bounds = {0.5, 1, 2}
+    percentiles = {50, 90}
+    histo1 = BuildHistogram({}, bounds)
+    luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {0, 0})
+end
+
+function TestExtractPercentilesZero()
+  bounds = {0.5, 1, 2}
+  percentiles = {50, 90}
+  histo1 = BuildHistogram({0}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {0, 0})
+end
+
+function TestExtractPercentilesOnABound()
+  bounds = {0.5, 1, 2}
+  percentiles = {50, 90}
+  histo1 = BuildHistogram({1, 1, 1, 1}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {1.5, 1.75})
+end
+
+function TestExtractPercentilesOnABoundSingle()
+  bounds = {0.5, 1, 2}
+  percentiles = {50, 90}
+  histo1 = BuildHistogram({1}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {1, 1})
+end
+
+function TestExtractPercentilesAllAbove()
+  bounds = {0.5, 1, 2}
+  percentiles = {50, 90}
+  histo1 = BuildHistogram({2.5}, bounds)
+  luaunit.assertEquals(ExtractPercentiles(histo1, bounds, percentiles), {2, 2})
+end
 
 os.exit(luaunit.run())

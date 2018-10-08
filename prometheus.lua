@@ -158,6 +158,10 @@ function Histogram:observe(value, label_values)
   self.prometheus:histogram_observe(self.name, self.label_names, label_values, value)
 end
 
+function Histogram:export(export_metric)
+  self.prometheus:histogram_export_percentiles(self.name, self.label_names, {50, 90, 95, 99}, export_metric.name)
+end
+
 local Prometheus = {}
 Prometheus.__index = Prometheus
 Prometheus.initialized = false
@@ -597,6 +601,75 @@ function Prometheus:collect()
     end
   end
   ngx.print(output)
+end
+
+function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
+  local result = {}
+  local size = table.getn(buckets)
+  local count = buckets[size]
+  if count > 0 then
+    local bucket_index = 1
+    for _, p in pairs(percentiles) do
+      local target = math.floor(count * p / 100)
+      while buckets[bucket_index] <= target and bucket_index < size do
+        bucket_index = bucket_index + 1
+      end
+      local prev_bucket = 0
+      local prev_boundary = 0
+      if bucket_index > 1 then
+        prev_bucket = buckets[bucket_index - 1]
+        prev_boundary = bucketsBoundaries[bucket_index - 1]
+      end
+      local next_boundary
+      if bucket_index == size then
+        -- Store the max value in observe to have a better result.
+        next_boundary = bucketsBoundaries[bucket_index - 1]
+      else
+        next_boundary = bucketsBoundaries[bucket_index]
+      end
+      local delta = buckets[bucket_index] - prev_bucket
+      local r = prev_boundary + (target - prev_bucket) * (next_boundary - prev_boundary) / delta
+      table.insert(result, r)
+    end
+  else
+    for _, p in pairs(percentiles) do
+      table.insert(result, 0)
+    end
+  end
+  return result
+end
+
+function Prometheus:histogram_export_percentiles(name, label_names, percentiles, export_prefix)
+  local keys = self.dict:get_keys(0)
+  for _, key in ipairs(keys) do
+    local value, err = self.dict:get(key)
+    if value then
+      local short_name = short_metric_name(key)
+      if short_name:find("_count", 1, true) == (short_name:len() - 5) then
+        local prefix = short_name:sub(1, short_name:len() - 6)
+        local suffix = key:sub(short_name:len() + 1, key:len() - 1)
+        if self.type[prefix] == "histogram" then
+          local count = self.dict:get(key)
+          local sum = self.dict:get(prefix .. '_sum' .. suffix .. '}')
+          local current_bucket = 0
+          local values = {}
+          for _, v in pairs(DEFAULT_BUCKETS) do
+            local key_for_value = prefix .. '_bucket' .. suffix .. ',le="' .. self.bucket_format[prefix]:format(v) .. '"}'
+            local value = self.dict:get(key)
+            table.insert(values, value)
+          end
+          local final_key = prefix .. '_bucket' .. suffix .. ',le="Inf"}'
+          local final_value = self.dict:get(final_key)
+          table.insert(values, final_value)
+          local result = ExtractPercentiles(values, DEFAULT_BUCKETS, percentiles)
+          for index, p in pairs(percentiles) do
+            local key = export_prefix .. suffix .. ',percentile="' .. p .. '"}'
+            self.dict:set(key, result[index])
+          end
+        end
+      end
+    end
+  end
 end
 
 return Prometheus
