@@ -498,7 +498,7 @@ function TestPrometheus:testHistogramExportPercentiles()
   self.p:set_key('foo_bucket{host="a",le="01.500"}', 917)
   self.p:set_key('foo_bucket{host="a",le="02.000"}', 928)
   self.p:set_key('foo_bucket{host="a",le="03.000"}', 1075)
-  self.p:set_key('foo_bucket{host="a",le="03.000"}', 1237)
+  self.p:set_key('foo_bucket{host="a",le="04.000"}', 1237)
   self.p:set_key('foo_bucket{host="a",le="05.000"}', 1237)
   self.p:set_key('foo_bucket{host="a",le="10.000"}', 1324)
   self.p:set_key('foo_bucket{host="a",le="Inf"}', 1363)
@@ -508,7 +508,7 @@ function TestPrometheus:testHistogramExportPercentiles()
 
 
   luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="50"}'), 2), 0.23)
-  luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="90"}'), 2), 2.96)
+  luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="90"}'), 2), 3.93)
   luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="95"}'), 2), 8.28)
   luaunit.assertEquals(round(self.dict:get('export{host="a",percentile="99"}'), 2), 10)
 end
