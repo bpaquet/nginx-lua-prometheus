@@ -612,6 +612,7 @@ function Prometheus:collect()
 end
 
 function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
+  -- Buckets, bucketsBoundaries, and percentiles must be sorted.
   local buckets_sum = {}
   local current_sum = 0
   for index, value in pairs(buckets) do
@@ -641,7 +642,7 @@ function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
       else
         next_boundary = bucketsBoundaries[bucket_index]
       end
-      local delta = buckets_sum[bucket_index] - prev_bucket
+      local delta = buckets[bucket_index]
       local r = prev_boundary + (target - prev_bucket) * (next_boundary - prev_boundary) / delta
       table.insert(result, r)
     end
