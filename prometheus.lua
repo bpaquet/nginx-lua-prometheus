@@ -511,15 +511,20 @@ function Prometheus:histogram_observe(name, label_names, label_values, value)
   -- by "+Inf" in Prometheus:collect().
   table.insert(l_names, "le")
   table.insert(l_values, "Inf")
-  self:inc(name .. "_bucket", l_names, l_values, 1)
 
   local label_count = #l_names
+  local incremented = false
   for _, bucket in ipairs(self.buckets[name]) do
     if value <= bucket then
       -- last label is now "le"
       l_values[label_count] = self.bucket_format[name]:format(bucket)
       self:inc(name .. "_bucket", l_names, l_values, 1)
+      incremented = true
+      break
     end
+  end
+  if not incremented then
+    self:inc(name .. "_bucket", l_names, l_values, 1)
   end
 end
 
@@ -607,20 +612,24 @@ function Prometheus:collect()
 end
 
 function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
+  -- Buckets, bucketsBoundaries, and percentiles must be sorted.
   local result = {}
   local size = table.getn(buckets)
-  local count = buckets[size]
+  local count = 0
+   for index, _ in pairs(buckets) do
+    count = count + buckets[index]
+  end
   if count > 0 then
     local bucket_index = 1
+    local buckets_sum = 0
     for _, p in pairs(percentiles) do
       local target = math.floor(count * p / 100)
-      while buckets[bucket_index] <= target and bucket_index < size do
+      while (buckets[bucket_index] + buckets_sum) <= target and bucket_index < size do
+        buckets_sum = buckets_sum + buckets[bucket_index]
         bucket_index = bucket_index + 1
       end
-      local prev_bucket = 0
       local prev_boundary = 0
       if bucket_index > 1 then
-        prev_bucket = buckets[bucket_index - 1]
         prev_boundary = bucketsBoundaries[bucket_index - 1]
       end
       local next_boundary
@@ -630,8 +639,8 @@ function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
       else
         next_boundary = bucketsBoundaries[bucket_index]
       end
-      local delta = buckets[bucket_index] - prev_bucket
-      local r = prev_boundary + (target - prev_bucket) * (next_boundary - prev_boundary) / delta
+      local delta = buckets[bucket_index]
+      local r = prev_boundary + (target - buckets_sum) * (next_boundary - prev_boundary) / delta
       table.insert(result, r)
     end
   else
