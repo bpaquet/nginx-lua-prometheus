@@ -613,26 +613,23 @@ end
 
 function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
   -- Buckets, bucketsBoundaries, and percentiles must be sorted.
-  local buckets_sum = {}
-  local current_sum = 0
-  for index, value in pairs(buckets) do
-    current_sum = current_sum + buckets[index]
-    buckets_sum[index] = current_sum
-  end
   local result = {}
   local size = table.getn(buckets)
-  local count = buckets_sum[size]
+  local count = 0
+   for index, _ in pairs(buckets) do
+    count = count + buckets[index]
+  end
   if count > 0 then
     local bucket_index = 1
+    local buckets_sum = 0
     for _, p in pairs(percentiles) do
       local target = math.floor(count * p / 100)
-      while buckets_sum[bucket_index] <= target and bucket_index < size do
+      while (buckets[bucket_index] + buckets_sum) <= target and bucket_index < size do
+        buckets_sum = buckets_sum + buckets[bucket_index]
         bucket_index = bucket_index + 1
       end
-      local prev_bucket = 0
       local prev_boundary = 0
       if bucket_index > 1 then
-        prev_bucket = buckets_sum[bucket_index - 1]
         prev_boundary = bucketsBoundaries[bucket_index - 1]
       end
       local next_boundary
@@ -643,7 +640,7 @@ function ExtractPercentiles(buckets, bucketsBoundaries, percentiles)
         next_boundary = bucketsBoundaries[bucket_index]
       end
       local delta = buckets[bucket_index]
-      local r = prev_boundary + (target - prev_bucket) * (next_boundary - prev_boundary) / delta
+      local r = prev_boundary + (target - buckets_sum) * (next_boundary - prev_boundary) / delta
       table.insert(result, r)
     end
   else
