@@ -310,6 +310,7 @@ function Prometheus.init(dict_name, prefix)
   self.registered = {}
   self.buckets = {}
   self.bucket_format = {}
+  self.no_reset = {}
   self.initialized = true
 
   self:counter("nginx_metric_errors_total",
@@ -551,7 +552,7 @@ function Prometheus:reset()
   local keys = self.dict:get_keys(0)
   for _, key in ipairs(keys) do
     local short_name = short_metric_name(key)
-    if self.type[short_name] ~= "counter" then
+    if self.type[short_name] ~= "counter" and not self.no_reset[short_name] then
       self:set_key(key, 0)
     end
   end
@@ -689,6 +690,14 @@ function Prometheus:histogram_export_percentiles(name, label_names, percentiles,
       end
     end
   end
+end
+
+function Prometheus:no_reset_for(name)
+  if not self.initialized then
+    ngx.log(ngx.ERR, "Prometheus module has not been initialized")
+    return
+  end
+  self.no_reset[name] = true
 end
 
 return Prometheus

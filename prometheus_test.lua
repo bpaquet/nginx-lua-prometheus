@@ -357,6 +357,8 @@ function TestPrometheus:testReset()
   local hist3 = self.p:histogram("l3", "Histogram 3", {"var"}, {1,2,3})
 
   self.counter1:inc(5)
+  self.gauge1:set(1)
+  self.p:no_reset_for('gauge1')
   self.gauge2:set(2, {"v2", "v1"})
   hist3:observe(2, {"ok"})
   hist3:observe(0.151, {"ok"})
@@ -370,6 +372,7 @@ function TestPrometheus:testReset()
   self.p:reset()
 
   luaunit.assertEquals(self.dict:get('metric1'), 5)
+  luaunit.assertEquals(self.dict:get('gauge1'), 1) -- not reset
   luaunit.assertEquals(self.dict:get('gauge2{f2="v2",f1="v1"}'), 0)
   luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="1.0"}'), 0)
   luaunit.assertEquals(self.dict:get('l3_bucket{var="ok",le="Inf"}'), nil)
